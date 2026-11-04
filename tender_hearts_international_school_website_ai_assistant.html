@@ -634,6 +634,13 @@
             quizScore: 0
         };
 
+        // Ensure browser voices are loaded correctly for GitHub Pages hosting
+        if (speechSynth && typeof speechSynth.onvoiceschanged !== 'undefined') {
+            speechSynth.onvoiceschanged = () => {
+                speechSynth.getVoices();
+            };
+        }
+
         // Explicit Global Modal Toggle Handler
         window.toggleChatModal = function(show) {
             const modal = document.getElementById('chatModal');
@@ -677,37 +684,51 @@
         }
 
         function processSpeechQueue() {
-            if (isSpeaking || speechQueue.length === 0) return;
+            if (isSpeaking || speechQueue.length === 0 || !speechSynth) return;
 
             const textToSpeak = speechQueue.shift();
             isSpeaking = true;
 
-            speechSynth.cancel();
+            try {
+                speechSynth.cancel();
 
-            activeUtterance = new SpeechSynthesisUtterance(textToSpeak);
-            activeUtterance.rate = 0.95;
-            activeUtterance.pitch = 1.0;
+                activeUtterance = new SpeechSynthesisUtterance(textToSpeak);
+                activeUtterance.rate = 0.95;
+                activeUtterance.pitch = 1.0;
 
-            const visualizer = document.getElementById('speechVisualizer');
+                // Select a polite female English voice if available
+                const voices = speechSynth.getVoices();
+                const femaleVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Female') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Victoria')));
+                if (femaleVoice) {
+                    activeUtterance.voice = femaleVoice;
+                }
 
-            activeUtterance.onstart = () => {
-                if (visualizer) visualizer.classList.remove('hidden');
-            };
+                const visualizer = document.getElementById('speechVisualizer');
 
-            const finishSpeech = () => {
+                activeUtterance.onstart = () => {
+                    if (visualizer) visualizer.classList.remove('hidden');
+                };
+
+                const finishSpeech = () => {
+                    isSpeaking = false;
+                    if (visualizer) visualizer.classList.add('hidden');
+                    activeUtterance = null;
+                    setTimeout(processSpeechQueue, 200);
+                };
+
+                activeUtterance.onend = finishSpeech;
+                activeUtterance.onerror = (e) => {
+                    console.warn('Speech synthesis notice:', e);
+                    finishSpeech();
+                };
+
+                speechSynth.speak(activeUtterance);
+            } catch (err) {
+                console.warn('Speech synthesis restricted in hosting environment:', err);
                 isSpeaking = false;
+                const visualizer = document.getElementById('speechVisualizer');
                 if (visualizer) visualizer.classList.add('hidden');
-                activeUtterance = null;
-                setTimeout(processSpeechQueue, 200);
-            };
-
-            activeUtterance.onend = finishSpeech;
-            activeUtterance.onerror = (e) => {
-                console.warn('Speech synthesis notice:', e);
-                finishSpeech();
-            };
-
-            speechSynth.speak(activeUtterance);
+            }
         }
 
         function cancelAllSpeech() {
